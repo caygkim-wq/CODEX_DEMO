@@ -11,11 +11,13 @@
 - 계약자료 파일 선택 및 10MB 제한
 - 개인정보 수집 동의 체크
 - 신청 데이터의 브라우저 임시 저장
-- 서버 API 연결을 위한 `submissionEndpoint` 설정 지점
+- FormSubmit AJAX를 통한 이메일 접수 연결
 
-## 실제 운영 접수 연결
+## 이메일 접수 방식
 
-현재 GitHub Pages는 정적 호스팅이므로 신청 데이터를 중앙에서 받는 서버 API가 필요합니다. API 주소가 준비되면 `index.html`의 `script.js` 앞에 다음 설정을 추가합니다.
+현재 신청 폼은 `ca.ygkim@gmail.com`으로 JSON 이메일을 보내도록 연결되어 있습니다. FormSubmit은 첫 실제 제출 전에 수신 이메일에서 활성화 확인을 요구할 수 있습니다.
+
+다른 접수 서버를 사용하려면 `script.js`의 `SUBMISSION_ENDPOINT` 값을 교체합니다.
 
 ```html
 <script>
@@ -26,7 +28,7 @@
 <script src="script.js"></script>
 ```
 
-서버는 다음 JSON을 받을 수 있어야 합니다.
+서버는 다음 JSON 형태를 받을 수 있어야 합니다.
 
 ```json
 {

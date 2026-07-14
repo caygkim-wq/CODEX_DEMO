@@ -6,7 +6,7 @@ const workflowData = [
   { number: '05', title: '준공·청구 패키지', description: '검수 완료 후 대금청구에 필요한 서류를 한 번에 묶고, 계약이력과 제출문서를 관리합니다.', list: ['청구·하자·완납 자료 패키지', '문서 버전과 제출 이력 관리'], file: '대금청구_패키지.zip' }
 ];
 
-const SUBMISSION_ENDPOINT = window.SERVICE_CONFIG?.submissionEndpoint || '';
+const SUBMISSION_ENDPOINT = window.SERVICE_CONFIG?.submissionEndpoint || 'https://formsubmit.co/ajax/ca.ygkim@gmail.com';
 
 const tabs = document.querySelectorAll('.workflow-tab');
 const stageNumber = document.querySelector('#stageNumber');
@@ -90,17 +90,27 @@ async function submitLead(form) {
   const submission = createSubmission(form);
   if (SUBMISSION_ENDPOINT) {
     try {
+      const emailPayload = {
+        _subject: submission.type === 'diagnosis' ? '[조달서류 AI 매니저] 계약 1건 진단 신청' : '[조달서류 AI 매니저] 일반 문의',
+        _template: 'table',
+        신청유형: submission.type === 'diagnosis' ? '계약 1건 진단' : '일반 문의',
+        접수일시: submission.createdAt,
+        ...submission.data,
+      };
       const response = await fetch(SUBMISSION_ENDPOINT, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(submission),
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(emailPayload),
       });
       if (!response.ok) throw new Error('Submission failed');
       setFormMessage(form, '신청이 접수되었습니다. 담당자가 연락드리겠습니다.', 'success');
       form.reset();
       return;
     } catch (error) {
-      setFormMessage(form, '접수 서버 연결에 실패했습니다. 잠시 후 다시 시도해주세요.', 'error');
+      const localSubmissions = JSON.parse(localStorage.getItem('procurementAiLeads') || '[]');
+      localSubmissions.push(submission);
+      localStorage.setItem('procurementAiLeads', JSON.stringify(localSubmissions));
+      setFormMessage(form, '이메일 접수 연결에 실패해 신청 내용을 이 브라우저에 임시 저장했습니다.', 'error');
       return;
     }
   }
