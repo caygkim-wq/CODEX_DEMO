@@ -178,6 +178,15 @@ const authSession = document.querySelector('#authSession');
 const authSessionEmail = document.querySelector('#authSessionEmail');
 const authTitle = document.querySelector('#authTitle');
 
+const signupForm = document.querySelector('#signupForm');
+const companyField = signupForm.querySelector('label:last-of-type');
+const fullNameField = document.createElement('label');
+fullNameField.innerHTML = '<span>성명</span><input type="text" name="fullName" placeholder="성명을 입력해주세요" required />';
+const signupPhoneField = document.createElement('label');
+signupPhoneField.innerHTML = '<span>연락처</span><input type="tel" name="phone" placeholder="010-0000-0000" required />';
+signupForm.insertBefore(fullNameField, companyField);
+signupForm.insertBefore(signupPhoneField, companyField);
+
 function setAuthMessage(message, kind = '') {
   authMessage.textContent = message;
   authMessage.className = `auth-message ${kind}`.trim();
@@ -231,7 +240,7 @@ document.querySelectorAll('[data-auth-close]').forEach((element) => element.addE
 authTabs.forEach((tab) => tab.addEventListener('click', () => setAuthTab(tab.dataset.authTab)));
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeAuthModal(); });
 
-document.querySelector('#signupForm').addEventListener('submit', async (event) => {
+signupForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
   const data = Object.fromEntries(new FormData(form).entries());
@@ -239,7 +248,7 @@ document.querySelector('#signupForm').addEventListener('submit', async (event) =
   const { data: result, error } = await supabaseClient.auth.signUp({
     email: data.email,
     password: data.password,
-    options: { data: { company_name: data.company }, emailRedirectTo: 'https://caygkim-wq.github.io/CODEX_DEMO/' },
+    options: { data: { full_name: data.fullName, phone: data.phone, company_name: data.company }, emailRedirectTo: 'https://caygkim-wq.github.io/CODEX_DEMO/' },
   });
   if (error) {
     setAuthMessage(error.message, 'error');
