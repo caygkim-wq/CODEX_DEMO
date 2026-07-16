@@ -3,6 +3,7 @@
 
 create table if not exists public.leads (
   id uuid primary key default gen_random_uuid(),
+  auth_user_id uuid references auth.users(id) on delete set null,
   intake_type text not null check (intake_type in ('inquiry', 'diagnosis')),
   company_name text not null,
   manager_name text,
@@ -22,6 +23,8 @@ create table if not exists public.leads (
   created_at timestamptz not null default now()
 );
 
+alter table public.leads add column if not exists auth_user_id uuid references auth.users(id) on delete set null;
+
 alter table public.leads enable row level security;
 
 drop policy if exists "Public can create leads" on public.leads;
@@ -29,8 +32,16 @@ create policy "Public can create leads"
   on public.leads
   for insert
   to anon
-  with check (true);
+  with check (auth_user_id is null);
+
+drop policy if exists "Authenticated users can create own leads" on public.leads;
+create policy "Authenticated users can create own leads"
+  on public.leads
+  for insert
+  to authenticated
+  with check (auth_user_id = auth.uid());
 
 -- 일반 방문자는 신청 내용을 조회·수정·삭제할 수 없습니다.
 revoke select, update, delete on public.leads from anon;
 grant insert on public.leads to anon;
+grant insert on public.leads to authenticated;

@@ -9,6 +9,8 @@ const workflowData = [
 const SUPABASE_URL = 'https://dwjrzgcfmfxsfxujlemt.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_IUtesnHyo5QAhYR0o1LatQ_-h9Z7LIJ';
 const EMAIL_ENDPOINT = 'https://formsubmit.co/ajax/ca.ygkim@gmail.com';
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+let currentUser = null;
 
 const tabs = document.querySelectorAll('.workflow-tab');
 const stageNumber = document.querySelector('#stageNumber');
@@ -81,6 +83,7 @@ function toSupabaseRecord(submission) {
   const data = submission.data;
   return {
     intake_type: submission.type,
+    auth_user_id: currentUser?.id || null,
     company_name: data.company || '',
     manager_name: data.manager || null,
     customer_email: data.email || null,
@@ -164,3 +167,113 @@ const observer = new IntersectionObserver((entries) => {
   });
 }, { threshold: 0.12 });
 document.querySelectorAll('.pain-card,.coverage-card,.target-grid article,.value-strip>div,.quote-callout').forEach((element) => observer.observe(element));
+
+const authModal = document.querySelector('#authModal');
+const authTrigger = document.querySelector('#authTrigger');
+const mobileAuthTrigger = document.querySelector('#mobileAuthTrigger');
+const authTabs = document.querySelectorAll('.auth-tab');
+const authForms = document.querySelectorAll('.auth-form');
+const authMessage = document.querySelector('#authMessage');
+const authSession = document.querySelector('#authSession');
+const authSessionEmail = document.querySelector('#authSessionEmail');
+const authTitle = document.querySelector('#authTitle');
+
+function setAuthMessage(message, kind = '') {
+  authMessage.textContent = message;
+  authMessage.className = `auth-message ${kind}`.trim();
+}
+
+function openAuthModal(tab = 'login') {
+  authModal.classList.add('open');
+  authModal.setAttribute('aria-hidden', 'false');
+  setAuthTab(tab);
+  document.body.classList.add('modal-open');
+}
+
+function closeAuthModal() {
+  authModal.classList.remove('open');
+  authModal.setAttribute('aria-hidden', 'true');
+  document.body.classList.remove('modal-open');
+}
+
+function setAuthTab(tabName) {
+  authTabs.forEach((tab) => {
+    const active = tab.dataset.authTab === tabName;
+    tab.classList.toggle('active', active);
+    tab.setAttribute('aria-selected', String(active));
+  });
+  authForms.forEach((form) => form.classList.toggle('active', form.dataset.authForm === tabName));
+  authTitle.innerHTML = tabName === 'signup' ? '고객 계정을<br /><span>시작하세요.</span>' : '고객 계정으로<br /><span>계약을 관리하세요.</span>';
+  setAuthMessage('');
+}
+
+function updateAuthUi(user) {
+  currentUser = user || null;
+  const label = currentUser ? '내 계정' : '고객 로그인';
+  authTrigger.querySelector('span').textContent = label;
+  mobileAuthTrigger.textContent = label;
+  authSession.hidden = !currentUser;
+  authForms.forEach((form) => { form.hidden = Boolean(currentUser); });
+  if (currentUser) {
+    authSessionEmail.textContent = currentUser.email || '로그인 사용자';
+    authTitle.innerHTML = '고객 계정으로<br /><span>로그인되었습니다.</span>';
+  } else {
+    authSessionEmail.textContent = '';
+  }
+}
+
+authTrigger.addEventListener('click', () => openAuthModal(currentUser ? 'login' : 'login'));
+mobileAuthTrigger.addEventListener('click', () => {
+  mobileNav.classList.remove('open');
+  openAuthModal('login');
+});
+document.querySelectorAll('[data-auth-close]').forEach((element) => element.addEventListener('click', closeAuthModal));
+authTabs.forEach((tab) => tab.addEventListener('click', () => setAuthTab(tab.dataset.authTab)));
+document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeAuthModal(); });
+
+document.querySelector('#signupForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const data = Object.fromEntries(new FormData(form).entries());
+  setAuthMessage('회원가입 처리 중입니다.');
+  const { data: result, error } = await supabaseClient.auth.signUp({
+    email: data.email,
+    password: data.password,
+    options: { data: { company_name: data.company }, emailRedirectTo: 'https://caygkim-wq.github.io/CODEX_DEMO/' },
+  });
+  if (error) {
+    setAuthMessage(error.message, 'error');
+    return;
+  }
+  form.reset();
+  setAuthMessage(result.session ? '회원가입이 완료되었습니다.' : '확인 이메일을 발송했습니다. 이메일 확인 후 로그인해주세요.', 'success');
+});
+
+document.querySelector('#loginForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const data = Object.fromEntries(new FormData(form).entries());
+  setAuthMessage('로그인 처리 중입니다.');
+  const { data: result, error } = await supabaseClient.auth.signInWithPassword({ email: data.email, password: data.password });
+  if (error) {
+    setAuthMessage('이메일 또는 비밀번호를 확인해주세요.', 'error');
+    return;
+  }
+  form.reset();
+  updateAuthUi(result.user);
+  setAuthMessage('로그인되었습니다.', 'success');
+});
+
+document.querySelector('#logoutButton').addEventListener('click', async () => {
+  const { error } = await supabaseClient.auth.signOut();
+  if (error) {
+    setAuthMessage('로그아웃에 실패했습니다.', 'error');
+    return;
+  }
+  updateAuthUi(null);
+  setAuthMessage('로그아웃되었습니다.', 'success');
+  setAuthTab('login');
+});
+
+supabaseClient.auth.getSession().then(({ data }) => updateAuthUi(data.session?.user || null));
+supabaseClient.auth.onAuthStateChange((_event, session) => updateAuthUi(session?.user || null));

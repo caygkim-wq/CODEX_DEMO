@@ -12,6 +12,8 @@
 - 개인정보 수집 동의 체크
 - 신청 데이터의 브라우저 임시 저장
 - FormSubmit AJAX를 통한 이메일 접수 연결
+- Supabase Auth 기반 고객 회원가입·로그인
+- 로그인한 고객의 신청 건을 `auth_user_id`로 연결
 
 ## 이메일 접수 방식
 
@@ -49,5 +51,9 @@
 - 저장 테이블: `public.leads`
 - 공개 방문자 권한: 신청 데이터 INSERT만 허용
 - 조회·수정·삭제: 공개 방문자에게 허용하지 않음
+
+## 고객 회원가입·로그인
+
+회원가입·로그인은 Supabase Auth를 사용합니다. Supabase Dashboard의 `Authentication > Providers > Email`에서 Email provider를 활성화하고, 이메일 확인을 사용할 경우 `Authentication > URL Configuration`의 Site URL에 GitHub Pages 주소를 등록하세요.
 
 공개용 publishable key는 프론트엔드에 포함될 수 있지만, secret/service role key는 절대 프론트엔드나 GitHub에 올리면 안 됩니다. Supabase 테이블을 만들기 전까지 신청은 이메일 또는 브라우저 임시저장으로 처리됩니다.
