@@ -110,7 +110,7 @@ create policy "Admins can read all leads"
     )
   );
 
--- 관리자 계정 생성 후 아래 문장의 이메일을 관리자 이메일로 바꾸어 실행하세요.
+-- 관리자 계정 생성 후 아래 문장을 실행하세요. 관리자 이메일: ca.ygkim@gmail.com
 -- update public.profiles
 -- set role = 'admin'
--- where id = (select id from auth.users where email = '관리자이메일@example.com');
+-- where id = (select id from auth.users where email = 'ca.ygkim@gmail.com');
