@@ -9,7 +9,9 @@ const workflowData = [
 const SUPABASE_URL = 'https://dwjrzgcfmfxsfxujlemt.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_IUtesnHyo5QAhYR0o1LatQ_-h9Z7LIJ';
 const EMAIL_ENDPOINT = 'https://formsubmit.co/ajax/ca.ygkim@gmail.com';
-const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+});
 let currentUser = null;
 
 const tabs = document.querySelectorAll('.workflow-tab');
@@ -193,6 +195,7 @@ function setAuthMessage(message, kind = '') {
 }
 
 function openAuthModal(tab = 'login') {
+  updateAuthUi(currentUser);
   authModal.classList.add('open');
   authModal.setAttribute('aria-hidden', 'false');
   setAuthTab(tab);
@@ -231,10 +234,16 @@ function updateAuthUi(user) {
   }
 }
 
-authTrigger.addEventListener('click', () => openAuthModal(currentUser ? 'login' : 'login'));
+async function openAuthForCurrentSession() {
+  const { data } = await supabaseClient.auth.getSession();
+  updateAuthUi(data.session?.user || null);
+  openAuthModal('login');
+}
+
+authTrigger.addEventListener('click', openAuthForCurrentSession);
 mobileAuthTrigger.addEventListener('click', () => {
   mobileNav.classList.remove('open');
-  openAuthModal('login');
+  openAuthForCurrentSession();
 });
 document.querySelectorAll('[data-auth-close]').forEach((element) => element.addEventListener('click', closeAuthModal));
 authTabs.forEach((tab) => tab.addEventListener('click', () => setAuthTab(tab.dataset.authTab)));
@@ -265,7 +274,10 @@ document.querySelector('#loginForm').addEventListener('submit', async (event) =>
   setAuthMessage('로그인 처리 중입니다.');
   const { data: result, error } = await supabaseClient.auth.signInWithPassword({ email: data.email, password: data.password });
   if (error) {
-    setAuthMessage('이메일 또는 비밀번호를 확인해주세요.', 'error');
+    const message = error.message?.toLowerCase().includes('email not confirmed')
+      ? '가입 확인 이메일의 링크를 먼저 클릭해주세요.'
+      : '이메일 또는 비밀번호를 확인해주세요.';
+    setAuthMessage(message, 'error');
     return;
   }
   form.reset();
@@ -274,11 +286,12 @@ document.querySelector('#loginForm').addEventListener('submit', async (event) =>
 });
 
 document.querySelector('#logoutButton').addEventListener('click', async () => {
-  const { error } = await supabaseClient.auth.signOut();
+  const { error } = await supabaseClient.auth.signOut({ scope: 'local' });
   if (error) {
     setAuthMessage('로그아웃에 실패했습니다.', 'error');
     return;
   }
+  currentUser = null;
   updateAuthUi(null);
   setAuthMessage('로그아웃되었습니다.', 'success');
   setAuthTab('login');
