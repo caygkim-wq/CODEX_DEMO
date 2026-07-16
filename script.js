@@ -189,6 +189,13 @@ signupPhoneField.innerHTML = '<span>연락처</span><input type="tel" name="phon
 signupForm.insertBefore(fullNameField, companyField);
 signupForm.insertBefore(signupPhoneField, companyField);
 
+const loginForm = document.querySelector('#loginForm');
+const resendConfirmationButton = document.createElement('button');
+resendConfirmationButton.type = 'button';
+resendConfirmationButton.className = 'auth-link';
+resendConfirmationButton.textContent = '가입 확인 이메일 다시 보내기';
+loginForm.appendChild(resendConfirmationButton);
+
 function setAuthMessage(message, kind = '') {
   authMessage.textContent = message;
   authMessage.className = `auth-message ${kind}`.trim();
@@ -267,7 +274,7 @@ signupForm.addEventListener('submit', async (event) => {
   setAuthMessage(result.session ? '회원가입이 완료되었습니다.' : '확인 이메일을 발송했습니다. 이메일 확인 후 로그인해주세요.', 'success');
 });
 
-document.querySelector('#loginForm').addEventListener('submit', async (event) => {
+loginForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
   const data = Object.fromEntries(new FormData(form).entries());
@@ -277,12 +284,32 @@ document.querySelector('#loginForm').addEventListener('submit', async (event) =>
     const message = error.message?.toLowerCase().includes('email not confirmed')
       ? '가입 확인 이메일의 링크를 먼저 클릭해주세요.'
       : '이메일 또는 비밀번호를 확인해주세요.';
-    setAuthMessage(message, 'error');
+    setAuthMessage(`${message} (${error.message})`, 'error');
     return;
   }
   form.reset();
   updateAuthUi(result.user);
   setAuthMessage('로그인되었습니다.', 'success');
+});
+
+resendConfirmationButton.addEventListener('click', async () => {
+  const email = loginForm.querySelector('input[name="email"]').value.trim();
+  if (!email) {
+    setAuthMessage('이메일을 먼저 입력해주세요.', 'error');
+    return;
+  }
+
+  const { error } = await supabaseClient.auth.resend({
+    type: 'signup',
+    email,
+    options: { emailRedirectTo: 'https://caygkim-wq.github.io/CODEX_DEMO/' },
+  });
+  setAuthMessage(
+    error
+      ? `확인 이메일 재발송에 실패했습니다. (${error.message})`
+      : '확인 이메일을 다시 보냈습니다. 받은편지함과 스팸함을 확인해주세요.',
+    error ? 'error' : 'success',
+  );
 });
 
 document.querySelector('#logoutButton').addEventListener('click', async () => {
