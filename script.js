@@ -6,7 +6,9 @@ const workflowData = [
   { number: '05', title: '준공·청구 패키지', description: '검수 완료 후 대금청구에 필요한 서류를 한 번에 묶고, 계약이력과 제출문서를 관리합니다.', list: ['청구·하자·완납 자료 패키지', '문서 버전과 제출 이력 관리'], file: '대금청구_패키지.zip' }
 ];
 
-const SUBMISSION_ENDPOINT = window.SERVICE_CONFIG?.submissionEndpoint || 'https://formsubmit.co/ajax/ca.ygkim@gmail.com';
+const SUPABASE_URL = 'https://dwjrzgcfmfxsfxujlemt.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_IUtesnHyo5QAhYR0o1LatQ_-h9Z7LIJ';
+const EMAIL_ENDPOINT = 'https://formsubmit.co/ajax/ca.ygkim@gmail.com';
 
 const tabs = document.querySelectorAll('.workflow-tab');
 const stageNumber = document.querySelector('#stageNumber');
@@ -66,12 +68,7 @@ function createSubmission(form) {
   const file = form.querySelector('input[type="file"]')?.files?.[0];
   if (file) data.contractFile = { name: file.name, size: file.size, type: file.type };
   delete data.consent;
-  return {
-    id: `lead_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    type: form.dataset.formType,
-    createdAt: new Date().toISOString(),
-    data,
-  };
+  return { id: `lead_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, type: form.dataset.formType, createdAt: new Date().toISOString(), data };
 }
 
 function setFormMessage(form, message, kind = '') {
@@ -80,46 +77,80 @@ function setFormMessage(form, message, kind = '') {
   messageElement.className = `form-note ${kind}`.trim();
 }
 
+function toSupabaseRecord(submission) {
+  const data = submission.data;
+  return {
+    intake_type: submission.type,
+    company_name: data.company || '',
+    manager_name: data.manager || null,
+    customer_email: data.email || null,
+    phone: data.phone || '',
+    service: data.service || null,
+    message: data.message || null,
+    industry: data.industry || null,
+    agency: data.agency || null,
+    contract_stage: data.stage || null,
+    contract_amount: data.amount || null,
+    contact_method: data.contactMethod || null,
+    contract_file_name: data.contractFile?.name || null,
+    contract_file_size: data.contractFile?.size || null,
+    contract_file_type: data.contractFile?.type || null,
+    created_at: submission.createdAt,
+  };
+}
+
+async function saveToSupabase(submission) {
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/leads`, {
+    method: 'POST',
+    headers: {
+      apikey: SUPABASE_PUBLISHABLE_KEY,
+      'Content-Type': 'application/json',
+      Prefer: 'return=minimal',
+    },
+    body: JSON.stringify(toSupabaseRecord(submission)),
+  });
+  if (!response.ok) throw new Error(`Supabase insert failed: ${response.status}`);
+}
+
+async function sendEmail(submission) {
+  const data = submission.data;
+  const emailPayload = {
+    _subject: submission.type === 'diagnosis' ? '[조달서류 AI 매니저] 계약 1건 진단 신청' : '[조달서류 AI 매니저] 일반 문의',
+    _template: 'table',
+    신청유형: submission.type === 'diagnosis' ? '계약 1건 진단' : '일반 문의',
+    접수일시: submission.createdAt,
+    ...data,
+  };
+  const response = await fetch(EMAIL_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify(emailPayload),
+  });
+  if (!response.ok) throw new Error(`Email submission failed: ${response.status}`);
+}
+
 async function submitLead(form) {
   const file = form.querySelector('input[type="file"]')?.files?.[0];
   if (file && file.size > 10 * 1024 * 1024) {
     setFormMessage(form, '파일 크기는 10MB 이하로 선택해주세요.', 'error');
     return;
   }
-
   const submission = createSubmission(form);
-  if (SUBMISSION_ENDPOINT) {
-    try {
-      const emailPayload = {
-        _subject: submission.type === 'diagnosis' ? '[조달서류 AI 매니저] 계약 1건 진단 신청' : '[조달서류 AI 매니저] 일반 문의',
-        _template: 'table',
-        신청유형: submission.type === 'diagnosis' ? '계약 1건 진단' : '일반 문의',
-        접수일시: submission.createdAt,
-        ...submission.data,
-      };
-      const response = await fetch(SUBMISSION_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify(emailPayload),
-      });
-      if (!response.ok) throw new Error('Submission failed');
-      setFormMessage(form, '신청이 접수되었습니다. 담당자가 연락드리겠습니다.', 'success');
-      form.reset();
-      return;
-    } catch (error) {
-      const localSubmissions = JSON.parse(localStorage.getItem('procurementAiLeads') || '[]');
-      localSubmissions.push(submission);
-      localStorage.setItem('procurementAiLeads', JSON.stringify(localSubmissions));
-      setFormMessage(form, '이메일 접수 연결에 실패해 신청 내용을 이 브라우저에 임시 저장했습니다.', 'error');
-      return;
-    }
+  const [databaseResult, emailResult] = await Promise.allSettled([saveToSupabase(submission), sendEmail(submission)]);
+  if (databaseResult.status === 'fulfilled') {
+    setFormMessage(form, emailResult.status === 'fulfilled' ? '신청이 접수되었습니다. 담당자가 연락드리겠습니다.' : '신청이 중앙 접수되었습니다. 이메일 알림은 연결되지 않았지만 접수 내용은 저장되었습니다.', 'success');
+    form.reset();
+    return;
   }
-
+  if (emailResult.status === 'fulfilled') {
+    setFormMessage(form, '이메일로 신청이 접수되었습니다. Supabase 저장은 아직 완료되지 않았습니다.', 'success');
+    form.reset();
+    return;
+  }
   const localSubmissions = JSON.parse(localStorage.getItem('procurementAiLeads') || '[]');
   localSubmissions.push(submission);
   localStorage.setItem('procurementAiLeads', JSON.stringify(localSubmissions));
-  setFormMessage(form, '신청 내용이 이 브라우저에 임시 저장되었습니다. 운영 접수는 서버 연결 후 활성화됩니다.', 'success');
-  form.reset();
+  setFormMessage(form, '접수 서버 연결에 실패해 신청 내용을 이 브라우저에 임시 저장했습니다.', 'error');
 }
 
 intakeForms.forEach((form) => form.addEventListener('submit', (event) => {
