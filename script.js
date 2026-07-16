@@ -105,10 +105,12 @@ function toSupabaseRecord(submission) {
 }
 
 async function saveToSupabase(submission) {
+  const { data: sessionData } = await supabaseClient.auth.getSession();
   const response = await fetch(`${SUPABASE_URL}/rest/v1/leads`, {
     method: 'POST',
     headers: {
       apikey: SUPABASE_PUBLISHABLE_KEY,
+      ...(sessionData.session?.access_token ? { Authorization: `Bearer ${sessionData.session.access_token}` } : {}),
       'Content-Type': 'application/json',
       Prefer: 'return=minimal',
     },
@@ -179,6 +181,11 @@ const authMessage = document.querySelector('#authMessage');
 const authSession = document.querySelector('#authSession');
 const authSessionEmail = document.querySelector('#authSessionEmail');
 const authTitle = document.querySelector('#authTitle');
+const dashboardLink = document.createElement('a');
+dashboardLink.className = 'button auth-dashboard';
+dashboardLink.href = 'dashboard.html';
+dashboardLink.textContent = '대시보드 열기';
+authSession.insertBefore(dashboardLink, document.querySelector('#logoutButton'));
 
 const signupForm = document.querySelector('#signupForm');
 const companyField = signupForm.querySelector('label:last-of-type');

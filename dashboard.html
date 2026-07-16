@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>조달서류 AI 매니저 | 대시보드</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="dashboard.css" />
+</head>
+<body class="dashboard-body">
+  <div class="dashboard-shell">
+    <aside class="dashboard-sidebar">
+      <a class="brand dashboard-brand" href="index.html" aria-label="조달서류 AI 매니저 홈">
+        <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+        <span><strong>조달서류</strong> AI 매니저</span>
+      </a>
+      <div class="role-badge" id="roleBadge">고객 포털</div>
+      <nav class="dashboard-nav" id="dashboardNav" aria-label="대시보드 메뉴"></nav>
+      <div class="sidebar-bottom">
+        <a href="index.html#contact">문의 접수</a>
+        <button type="button" id="dashboardLogout">로그아웃</button>
+      </div>
+    </aside>
+
+    <main class="dashboard-main">
+      <header class="dashboard-topbar">
+        <div>
+          <p class="eyebrow blue-text">PROCUREMENT AI MANAGER</p>
+          <h1 id="pageTitle">고객 대시보드</h1>
+        </div>
+        <div class="user-chip"><span id="userInitial">?</span><span id="userEmail">로그인 확인 중</span></div>
+      </header>
+
+      <div class="dashboard-content" id="dashboardContent">
+        <div class="loading-card">대시보드를 준비하고 있습니다.</div>
+      </div>
+    </main>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="dashboard.js"></script>
+</body>
+</html>

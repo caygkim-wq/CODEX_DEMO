@@ -45,3 +45,72 @@ create policy "Authenticated users can create own leads"
 revoke select, update, delete on public.leads from anon;
 grant insert on public.leads to anon;
 grant insert on public.leads to authenticated;
+
+-- 고객·관리자 대시보드용 프로필과 권한
+create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  role text not null default 'customer' check (role in ('customer', 'admin')),
+  full_name text,
+  phone text,
+  company_name text,
+  created_at timestamptz not null default now()
+);
+
+alter table public.profiles enable row level security;
+grant select on public.profiles to authenticated;
+
+drop policy if exists "Users can read own profile" on public.profiles;
+create policy "Users can read own profile"
+  on public.profiles
+  for select
+  to authenticated
+  using (id = auth.uid());
+
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer set search_path = public
+as $$
+begin
+  insert into public.profiles (id, full_name, phone, company_name)
+  values (
+    new.id,
+    new.raw_user_meta_data ->> 'full_name',
+    new.raw_user_meta_data ->> 'phone',
+    new.raw_user_meta_data ->> 'company_name'
+  )
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();
+
+grant select on public.leads to authenticated;
+
+drop policy if exists "Customers can read own leads" on public.leads;
+create policy "Customers can read own leads"
+  on public.leads
+  for select
+  to authenticated
+  using (auth_user_id = auth.uid());
+
+drop policy if exists "Admins can read all leads" on public.leads;
+create policy "Admins can read all leads"
+  on public.leads
+  for select
+  to authenticated
+  using (
+    exists (
+      select 1 from public.profiles
+      where profiles.id = auth.uid() and profiles.role = 'admin'
+    )
+  );
+
+-- 관리자 계정 생성 후 아래 문장의 이메일을 관리자 이메일로 바꾸어 실행하세요.
+-- update public.profiles
+-- set role = 'admin'
+-- where id = (select id from auth.users where email = '관리자이메일@example.com');
