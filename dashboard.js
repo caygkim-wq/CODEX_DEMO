@@ -35,7 +35,7 @@ function authHeaders(token) {
 
 function formatDate(value) {
   if (!value) return '-';
-  return new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium' }).format(new Date(value));
+  return new Intl.DateTimeFormat('ko-KR', { dateStyle: 'medium', timeStyle: 'medium', hour12: false }).format(new Date(value));
 }
 
 function statusLabel(status) {
@@ -70,15 +70,16 @@ function leadRows(items, admin = false) {
   return `<div class="lead-list">${items.map((lead) => {
     const [label, kind] = statusLabel(lead.status);
     const title = admin ? `${lead.company_name || '-'} · ${lead.intake_type === 'diagnosis' ? '진단' : '문의'}` : `${lead.intake_type === 'diagnosis' ? '계약 1건 진단' : '일반 문의'}`;
-    const detailButton = admin ? `<button class="lead-detail-button" type="button" data-lead-detail="${lead.id}">상세 보기</button>` : '';
+    const canViewDetail = admin || lead.intake_type === 'diagnosis';
+    const detailButton = canViewDetail ? `<button class="lead-detail-button" type="button" data-lead-detail="${lead.id}">상세 보기</button>` : '';
     return `<div class="lead-row"><span>${escapeHtml(title)}</span><span><small>${formatDate(lead.created_at)}</small> <b class="status-pill ${kind}">${label}</b>${detailButton}</span></div>`;
   }).join('')}</div>`;
 }
 
 function openLeadDetail(leadId) {
-  if (currentRole !== 'admin') return;
   const lead = leads.find((item) => item.id === leadId);
-  if (!lead) return;
+  const canViewLead = currentRole === 'admin' || lead?.auth_user_id === currentUser?.id;
+  if (!lead || !canViewLead) return;
 
   document.querySelector('#leadDetailModal')?.remove();
   const [status, statusKind] = statusLabel(lead.status);
