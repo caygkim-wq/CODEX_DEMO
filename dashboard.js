@@ -123,8 +123,8 @@ async function initializeDashboard() {
   userInitial.textContent = (currentUser.email || '?').charAt(0).toUpperCase();
 
   const profileResponse = await fetch(`${SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(currentUser.id)}&select=role`, { headers: authHeaders(sessionData.session.access_token) });
-  const profiles = profileResponse.ok ? await profileResponse.json() : [];
-  currentRole = profiles[0]?.role === 'admin' || currentUser.app_metadata?.role === 'admin' ? 'admin' : 'customer';
+  const currentProfile = profileResponse.ok ? await profileResponse.json() : [];
+  currentRole = currentProfile[0]?.role === 'admin' || currentUser.app_metadata?.role === 'admin' ? 'admin' : 'customer';
   roleBadge.textContent = currentRole === 'admin' ? '관리자 포털' : '고객 포털';
   pageTitle.textContent = currentRole === 'admin' ? '관리자 대시보드' : '고객 대시보드';
   leads = await loadLeads(sessionData.session);
