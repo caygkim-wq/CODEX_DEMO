@@ -257,7 +257,8 @@ async function submitDashboardDiagnosis(event) {
 
   form.reset();
   leads = await loadLeads(sessionData.session);
-  setDiagnosisStatus(form, '진단 신청이 접수되었습니다. 담당자가 검토 후 연락드리겠습니다.', 'success');
+  renderCustomer();
+  showView('contracts');
 }
 
 async function loadLeads(session) {
