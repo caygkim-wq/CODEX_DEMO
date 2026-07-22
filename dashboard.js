@@ -1,5 +1,6 @@
 const SUPABASE_URL = 'https://dwjrzgcfmfxsfxujlemt.supabase.co';
 const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_IUtesnHyo5QAhYR0o1LatQ_-h9Z7LIJ';
+const CONTRACT_DOCUMENT_BUCKET = 'contract-documents';
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
 });
@@ -73,7 +74,7 @@ function renderCustomer() {
       <div class="dash-grid"><div class="dash-card"><h2>최근 접수 내역</h2>${leadRows(leads.slice(0, 5))}<div class="action-row"><button class="button button-primary" type="button" data-go="diagnosis">계약 1건 진단 신청</button></div></div><div class="dash-card"><h2>오늘 처리할 일</h2><div class="notice-box">서류를 제출하면 담당자가 확인 후 필요한 보완사항을 안내해드립니다.</div><div class="action-row"><button class="button auth-logout" type="button" data-go="files">서류함 열기</button></div></div></div>
     </section>
     <section class="dash-section" id="view-contracts"><p class="dash-lead">고객님의 계약과 진단 신청 이력을 관리합니다.</p><div class="dash-card"><h2>내 계약·진단 목록</h2>${leadRows(leads)}</div></section>
-    <section class="dash-section" id="view-diagnosis"><p class="dash-lead">계약서와 기본 정보를 보내주시면 담당자가 1건을 기준으로 진단합니다.</p><div class="form-panel"><div class="notice-box">현재 진단 신청은 홈페이지의 신청 화면과 연결되어 있습니다.</div><div class="action-row"><a class="button button-primary" href="index.html#contact">진단 신청 화면으로 이동</a></div></div></section>
+    <section class="dash-section" id="view-diagnosis"><p class="dash-lead">계약 정보와 자료를 제출하면 담당자가 계약 1건을 기준으로 필요한 서류와 다음 단계를 진단합니다.</p><form class="form-panel dashboard-form" id="dashboardDiagnosisForm"><div class="dashboard-form-grid"><label><span>회사명</span><input type="text" name="company" value="${currentUser.user_metadata?.company_name || ''}" required /></label><label><span>담당자명</span><input type="text" name="manager" value="${currentUser.user_metadata?.full_name || ''}" required /></label><label><span>연락처</span><input type="tel" name="phone" value="${currentUser.user_metadata?.phone || ''}" placeholder="010-0000-0000" required /></label><label><span>업종</span><select name="industry" required><option value="">선택해주세요</option><option>전기공사</option><option>통신공사</option><option>시설물 유지보수</option><option>물품·납품</option><option>일반 용역</option><option>기타</option></select></label><label><span>발주기관</span><input type="text" name="agency" placeholder="예: ○○시청" required /></label><label><span>계약 단계</span><select name="stage"><option>계약체결 전</option><option>착공 준비</option><option>이행 중</option><option>준공·완료 준비</option><option>대금청구 준비</option></select></label><label><span>계약금액</span><input type="text" name="amount" placeholder="예: 48,500,000원" /></label><label><span>희망 연락 방법</span><select name="contactMethod"><option>전화</option><option>문자</option><option>이메일</option></select></label></div><label class="dashboard-file-field"><span>진단용 계약자료</span><input type="file" name="contractFile" accept=".pdf,.doc,.docx,.hwp,.hwpx,.xlsx,.xls,.zip" required /><small>PDF, HWP/HWPX, Word, Excel, ZIP 파일 · 최대 10MB</small></label><label class="dashboard-consent"><input type="checkbox" name="consent" required /><span>상담 및 계약자료 확인을 위한 개인정보 수집·이용에 동의합니다.</span></label><button class="button button-primary" type="submit">파일 업로드 후 진단 신청</button><p class="dashboard-form-status" role="status"></p></form></section>
     <section class="dash-section" id="view-files"><p class="dash-lead">계약별 제출 서류와 파일 상태를 확인하는 공간입니다.</p><div class="dash-card"><h2>서류함</h2><div class="empty-state"><strong>연결된 서류함을 준비 중입니다.</strong>계약 진단 신청 후 제출 파일이 계약별로 표시됩니다.</div></div></section>
     <section class="dash-section" id="view-requests"><p class="dash-lead">담당자가 요청한 보완사항을 확인하고 자료를 다시 제출합니다.</p><div class="dash-card"><h2>보완 요청</h2>${leadRows(leads.filter((lead) => lead.status === 'in_progress'))}</div></section>
     <section class="dash-section" id="view-inquiries"><p class="dash-lead">문의와 상담 답변을 확인합니다.</p><div class="dash-card"><h2>문의 내역</h2>${leadRows(leads.filter((lead) => lead.intake_type === 'inquiry'))}</div></section>
@@ -96,6 +97,93 @@ function renderAdmin() {
 
 function wireActionButtons() {
   document.querySelectorAll('[data-go]').forEach((button) => button.addEventListener('click', () => showView(button.dataset.go)));
+  document.querySelector('#dashboardDiagnosisForm')?.addEventListener('submit', submitDashboardDiagnosis);
+}
+
+function setDiagnosisStatus(form, message, kind = '') {
+  const status = form.querySelector('.dashboard-form-status');
+  status.textContent = message;
+  status.className = `dashboard-form-status ${kind}`.trim();
+}
+
+function createStorageFileName(fileName) {
+  const extension = fileName.includes('.') ? `.${fileName.split('.').pop().toLowerCase()}` : '';
+  const baseName = fileName.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80) || 'contract_document';
+  return `${Date.now()}_${baseName}${extension}`;
+}
+
+async function submitDashboardDiagnosis(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const submitButton = form.querySelector('button[type="submit"]');
+  const file = form.querySelector('input[name="contractFile"]').files?.[0];
+  const allowedExtensions = ['pdf', 'doc', 'docx', 'hwp', 'hwpx', 'xlsx', 'xls', 'zip'];
+  const extension = file?.name.split('.').pop()?.toLowerCase();
+
+  if (!file || !allowedExtensions.includes(extension)) {
+    setDiagnosisStatus(form, '지원하는 형식의 계약자료를 선택해주세요.', 'error');
+    return;
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    setDiagnosisStatus(form, '파일 크기는 10MB 이하만 업로드할 수 있습니다.', 'error');
+    return;
+  }
+
+  const { data: sessionData } = await supabaseClient.auth.getSession();
+  if (!sessionData.session || !currentUser) {
+    setDiagnosisStatus(form, '로그인 상태를 확인할 수 없습니다. 다시 로그인해주세요.', 'error');
+    return;
+  }
+
+  const data = Object.fromEntries(new FormData(form).entries());
+  const storagePath = `${currentUser.id}/${createStorageFileName(file.name)}`;
+  submitButton.disabled = true;
+  setDiagnosisStatus(form, '계약자료를 업로드하고 신청을 접수하는 중입니다.');
+
+  const { data: uploadData, error: uploadError } = await supabaseClient.storage
+    .from(CONTRACT_DOCUMENT_BUCKET)
+    .upload(storagePath, file, { contentType: file.type || 'application/octet-stream', upsert: false });
+
+  if (uploadError) {
+    submitButton.disabled = false;
+    setDiagnosisStatus(form, `파일 업로드에 실패했습니다. (${uploadError.message})`, 'error');
+    return;
+  }
+
+  const record = {
+    intake_type: 'diagnosis',
+    auth_user_id: currentUser.id,
+    company_name: data.company,
+    manager_name: data.manager,
+    customer_email: currentUser.email || null,
+    phone: data.phone,
+    industry: data.industry,
+    agency: data.agency,
+    contract_stage: data.stage,
+    contract_amount: data.amount || null,
+    contact_method: data.contactMethod,
+    contract_file_name: file.name,
+    contract_file_size: file.size,
+    contract_file_type: file.type || null,
+    contract_file_path: uploadData.path,
+  };
+
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/leads`, {
+    method: 'POST',
+    headers: { ...authHeaders(sessionData.session.access_token), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+    body: JSON.stringify(record),
+  });
+
+  submitButton.disabled = false;
+  if (!response.ok) {
+    await supabaseClient.storage.from(CONTRACT_DOCUMENT_BUCKET).remove([uploadData.path]);
+    setDiagnosisStatus(form, '신청 정보 저장에 실패했습니다. 잠시 후 다시 시도해주세요.', 'error');
+    return;
+  }
+
+  form.reset();
+  leads = await loadLeads(sessionData.session);
+  setDiagnosisStatus(form, '진단 신청이 접수되었습니다. 담당자가 검토 후 연락드리겠습니다.', 'success');
 }
 
 async function loadLeads(session) {

@@ -19,11 +19,13 @@ create table if not exists public.leads (
   contract_file_name text,
   contract_file_size bigint,
   contract_file_type text,
+  contract_file_path text,
   status text not null default 'new' check (status in ('new', 'contacted', 'in_progress', 'closed')),
   created_at timestamptz not null default now()
 );
 
 alter table public.leads add column if not exists auth_user_id uuid references auth.users(id) on delete set null;
+alter table public.leads add column if not exists contract_file_path text;
 
 alter table public.leads enable row level security;
 
@@ -145,6 +147,48 @@ create policy "Admins can read all leads"
   for select
   to authenticated
   using (public.is_admin());
+
+-- 계약 진단자료 파일 저장소
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('contract-documents', 'contract-documents', false, 10485760)
+on conflict (id) do nothing;
+
+drop policy if exists "Users upload own contract documents" on storage.objects;
+create policy "Users upload own contract documents"
+  on storage.objects
+  for insert
+  to authenticated
+  with check (
+    bucket_id = 'contract-documents'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+drop policy if exists "Users view own contract documents" on storage.objects;
+create policy "Users view own contract documents"
+  on storage.objects
+  for select
+  to authenticated
+  using (
+    bucket_id = 'contract-documents'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+drop policy if exists "Admins view all contract documents" on storage.objects;
+create policy "Admins view all contract documents"
+  on storage.objects
+  for select
+  to authenticated
+  using (bucket_id = 'contract-documents' and public.is_admin());
+
+drop policy if exists "Users delete own contract documents" on storage.objects;
+create policy "Users delete own contract documents"
+  on storage.objects
+  for delete
+  to authenticated
+  using (
+    bucket_id = 'contract-documents'
+    and (storage.foldername(name))[1] = auth.uid()::text
+  );
 
 -- 관리자 계정 생성 후 아래 문장을 실행하세요. 관리자 이메일: ca.ygkim@gmail.com
 -- update public.profiles
