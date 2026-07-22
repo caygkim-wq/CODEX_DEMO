@@ -111,10 +111,19 @@ begin
 end;
 $$;
 
-update public.profiles p
-set email = u.email
-from auth.users u
-where p.id = u.id and (p.email is null or p.email = '');
+insert into public.profiles (id, email, full_name, phone, company_name)
+select
+  id,
+  email,
+  raw_user_meta_data ->> 'full_name',
+  raw_user_meta_data ->> 'phone',
+  raw_user_meta_data ->> 'company_name'
+from auth.users
+on conflict (id) do update
+set email = coalesce(public.profiles.email, excluded.email),
+    full_name = coalesce(public.profiles.full_name, excluded.full_name),
+    phone = coalesce(public.profiles.phone, excluded.phone),
+    company_name = coalesce(public.profiles.company_name, excluded.company_name);
 
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
