@@ -24,6 +24,11 @@ let currentRole = 'customer';
 let leads = [];
 let profiles = [];
 
+content.addEventListener('click', (event) => {
+  const detailButton = event.target.closest('[data-lead-detail]');
+  if (detailButton) openLeadDetail(detailButton.dataset.leadDetail);
+});
+
 function authHeaders(token) {
   return { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${token}` };
 }
@@ -36,6 +41,15 @@ function formatDate(value) {
 function statusLabel(status) {
   const labels = { new: ['접수 대기', ''], contacted: ['상담 중', 'warning'], in_progress: ['검토 진행', 'warning'], closed: ['처리 완료', 'success'] };
   return labels[status] || ['확인 필요', ''];
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
+}
+
+function formatFileSize(bytes) {
+  if (!bytes) return '-';
+  return bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)}MB` : `${Math.ceil(bytes / 1024)}KB`;
 }
 
 function renderNav() {
@@ -55,8 +69,68 @@ function leadRows(items, admin = false) {
   if (!items.length) return '<div class="empty-state"><strong>아직 접수된 내용이 없습니다.</strong>새로운 신청이나 문의가 등록되면 이곳에서 확인할 수 있습니다.</div>';
   return `<div class="lead-list">${items.map((lead) => {
     const [label, kind] = statusLabel(lead.status);
-    return `<div class="lead-row"><span>${admin ? `${lead.company_name || '-'} · ${lead.intake_type === 'diagnosis' ? '진단' : '문의'}` : `${lead.intake_type === 'diagnosis' ? '계약 1건 진단' : '일반 문의'}`}</span><span><small>${formatDate(lead.created_at)}</small> <b class="status-pill ${kind}">${label}</b></span></div>`;
+    const title = admin ? `${lead.company_name || '-'} · ${lead.intake_type === 'diagnosis' ? '진단' : '문의'}` : `${lead.intake_type === 'diagnosis' ? '계약 1건 진단' : '일반 문의'}`;
+    const detailButton = admin ? `<button class="lead-detail-button" type="button" data-lead-detail="${lead.id}">상세 보기</button>` : '';
+    return `<div class="lead-row"><span>${escapeHtml(title)}</span><span><small>${formatDate(lead.created_at)}</small> <b class="status-pill ${kind}">${label}</b>${detailButton}</span></div>`;
   }).join('')}</div>`;
+}
+
+function openLeadDetail(leadId) {
+  if (currentRole !== 'admin') return;
+  const lead = leads.find((item) => item.id === leadId);
+  if (!lead) return;
+
+  document.querySelector('#leadDetailModal')?.remove();
+  const [status, statusKind] = statusLabel(lead.status);
+  const values = [
+    ['접수 구분', lead.intake_type === 'diagnosis' ? '계약 1건 진단' : '일반 문의'],
+    ['접수일', formatDate(lead.created_at)],
+    ['회사명', lead.company_name],
+    ['담당자', lead.manager_name],
+    ['연락처', lead.phone],
+    ['이메일', lead.customer_email],
+    ['업종', lead.industry],
+    ['발주기관', lead.agency],
+    ['계약 단계', lead.contract_stage],
+    ['계약금액', lead.contract_amount],
+    ['희망 연락 방법', lead.contact_method],
+  ].filter(([, value]) => value);
+  const detailRows = values.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join('');
+  const hasStoredFile = Boolean(lead.contract_file_path);
+  const fileArea = lead.contract_file_name
+    ? `<div class="detail-file"><div><strong>${escapeHtml(lead.contract_file_name)}</strong><small>${escapeHtml(lead.contract_file_type || '파일 형식 정보 없음')} · ${formatFileSize(lead.contract_file_size)}</small></div>${hasStoredFile ? '<button class="button button-primary" type="button" data-download-document>첨부파일 열기</button>' : '<small class="legacy-file-note">이전 홈페이지 접수 건은 파일명만 기록되어 있어 원본 파일을 열 수 없습니다.</small>'}</div>`
+    : '<div class="empty-state"><strong>첨부파일이 없습니다.</strong>신청 시 파일이 제출되지 않았습니다.</div>';
+  const message = lead.message ? `<section class="detail-message"><h3>문의 내용</h3><p>${escapeHtml(lead.message)}</p></section>` : '';
+  const modal = document.createElement('div');
+  modal.id = 'leadDetailModal';
+  modal.className = 'lead-detail-modal';
+  modal.innerHTML = `<div class="lead-detail-backdrop" data-detail-close></div><section class="lead-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="leadDetailTitle"><button class="lead-detail-close" type="button" data-detail-close aria-label="닫기">×</button><p class="eyebrow blue-text">DIAGNOSIS REQUEST</p><h2 id="leadDetailTitle">${lead.intake_type === 'diagnosis' ? '계약 1건 진단 신청' : '고객 문의'} <span class="status-pill ${statusKind}">${status}</span></h2><div class="detail-grid">${detailRows}</div>${message}<section class="detail-file-section"><h3>첨부 계약자료</h3>${fileArea}<p class="detail-download-status" role="status"></p></section></section>`;
+  document.body.append(modal);
+  document.body.classList.add('modal-open');
+  modal.querySelectorAll('[data-detail-close]').forEach((button) => button.addEventListener('click', () => {
+    modal.remove();
+    document.body.classList.remove('modal-open');
+  }));
+  modal.querySelector('[data-download-document]')?.addEventListener('click', () => downloadLeadDocument(lead, modal));
+}
+
+async function downloadLeadDocument(lead, modal) {
+  const status = modal.querySelector('.detail-download-status');
+  status.textContent = '첨부파일을 준비하고 있습니다.';
+  const { data, error } = await supabaseClient.storage.from(CONTRACT_DOCUMENT_BUCKET).createSignedUrl(lead.contract_file_path, 60);
+  if (error) {
+    status.textContent = `첨부파일을 열 수 없습니다. (${error.message})`;
+    status.classList.add('error');
+    return;
+  }
+  const link = document.createElement('a');
+  link.href = data.signedUrl;
+  link.target = '_blank';
+  link.rel = 'noopener';
+  document.body.append(link);
+  link.click();
+  link.remove();
+  status.textContent = '첨부파일을 새 창에서 열었습니다.';
 }
 
 function profileRows(items) {
