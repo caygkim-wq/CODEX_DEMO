@@ -21,6 +21,7 @@ const roleBadge = document.querySelector('#roleBadge');
 let currentUser = null;
 let currentRole = 'customer';
 let leads = [];
+let profiles = [];
 
 function authHeaders(token) {
   return { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${token}` };
@@ -57,6 +58,11 @@ function leadRows(items, admin = false) {
   }).join('')}</div>`;
 }
 
+function profileRows(items) {
+  if (!items.length) return '<div class="empty-state"><strong>가입한 고객이 아직 없습니다.</strong>회원가입이 완료된 고객이 이곳에 표시됩니다.</div>';
+  return `<div class="data-table-wrap"><table class="data-table customer-table"><thead><tr><th>가입일</th><th>회사명</th><th>성명</th><th>연락처</th><th>이메일</th><th>구분</th></tr></thead><tbody>${items.map((profile) => `<tr><td>${formatDate(profile.created_at)}</td><td>${profile.company_name || '-'}</td><td>${profile.full_name || '-'}</td><td>${profile.phone || '-'}</td><td>${profile.email || '-'}</td><td><b class="status-pill ${profile.role === 'admin' ? 'success' : ''}">${profile.role === 'admin' ? '관리자' : '고객'}</b></td></tr>`).join('')}</tbody></table></div>`;
+}
+
 function renderCustomer() {
   const active = leads.filter((lead) => lead.status !== 'closed').length;
   const requests = leads.filter((lead) => lead.status === 'in_progress').length;
@@ -77,10 +83,11 @@ function renderCustomer() {
 
 function renderAdmin() {
   const active = leads.filter((lead) => lead.status !== 'closed').length;
+  const customerCount = profiles.filter((profile) => profile.role !== 'admin').length;
   content.innerHTML = `
-    <section class="dash-section active" id="view-home"><p class="dash-lead">전체 고객 접수와 계약 서류 처리현황을 관리합니다.</p><div class="summary-grid"><div class="summary-card"><small>전체 접수</small><strong class="blue">${leads.length}</strong></div><div class="summary-card"><small>신규 접수</small><strong class="orange">${leads.filter((lead) => lead.status === 'new').length}</strong></div><div class="summary-card"><small>검토 진행</small><strong class="orange">${active}</strong></div><div class="summary-card"><small>처리 완료</small><strong class="green">${leads.filter((lead) => lead.status === 'closed').length}</strong></div></div><div class="dash-grid"><div class="dash-card"><h2>최근 접수</h2>${leadRows(leads.slice(0, 8), true)}</div><div class="dash-card"><h2>운영 안내</h2><div class="notice-box">관리자 권한은 Supabase profiles 테이블에서 role이 admin인 계정에만 부여해야 합니다.</div></div></div></section>
+    <section class="dash-section active" id="view-home"><p class="dash-lead">전체 고객 접수와 계약 서류 처리현황을 관리합니다.</p><div class="summary-grid"><div class="summary-card"><small>가입 고객</small><strong class="blue">${customerCount}</strong></div><div class="summary-card"><small>전체 접수</small><strong class="blue">${leads.length}</strong></div><div class="summary-card"><small>신규 접수</small><strong class="orange">${leads.filter((lead) => lead.status === 'new').length}</strong></div><div class="summary-card"><small>처리 완료</small><strong class="green">${leads.filter((lead) => lead.status === 'closed').length}</strong></div></div><div class="dash-grid"><div class="dash-card"><h2>최근 접수</h2>${leadRows(leads.slice(0, 8), true)}</div><div class="dash-card"><h2>운영 안내</h2><div class="notice-box">관리자 권한은 Supabase profiles 테이블에서 role이 admin인 계정에만 부여해야 합니다.</div></div></div></section>
     <section class="dash-section" id="view-inbox"><p class="dash-lead">홈페이지에서 접수된 문의와 진단 신청을 확인합니다.</p><div class="data-table-wrap"><table class="data-table"><thead><tr><th>접수일</th><th>구분</th><th>회사명</th><th>연락처</th><th>상태</th></tr></thead><tbody>${leads.length ? leads.map((lead) => { const [label, kind] = statusLabel(lead.status); return `<tr><td>${formatDate(lead.created_at)}</td><td>${lead.intake_type === 'diagnosis' ? '계약 진단' : '일반 문의'}</td><td>${lead.company_name || '-'}</td><td>${lead.phone || '-'}</td><td><b class="status-pill ${kind}">${label}</b></td></tr>`; }).join('') : '<tr><td colspan="5">접수된 항목이 없습니다.</td></tr>'}</tbody></table></div></section>
-    <section class="dash-section" id="view-customers"><p class="dash-lead">고객사별 접수와 계약 이력을 관리합니다.</p><div class="dash-card"><h2>고객 목록</h2>${leadRows([...new Map(leads.map((lead) => [lead.company_name, lead])).values()], true)}</div></section>
+    <section class="dash-section" id="view-customers"><p class="dash-lead">회원가입한 고객의 기본정보와 계정 구분을 관리합니다.</p><div class="dash-card"><h2>회원가입 고객 목록 <span class="section-count">${customerCount}명</span></h2>${profileRows(profiles)}</div></section>
     <section class="dash-section" id="view-contracts"><p class="dash-lead">진단 신청을 계약 단위로 관리합니다.</p><div class="dash-card"><h2>계약·진단 목록</h2>${leadRows(leads.filter((lead) => lead.intake_type === 'diagnosis'), true)}</div></section>
     <section class="dash-section" id="view-review"><p class="dash-lead">제출 서류의 검토 결과와 보완 요청을 관리합니다.</p><div class="dash-card"><h2>서류 검토 대기</h2>${leadRows(leads.filter((lead) => lead.intake_type === 'diagnosis' && lead.status !== 'closed'), true)}</div></section>
     <section class="dash-section" id="view-inquiries"><p class="dash-lead">고객 문의에 답변하고 상담 이력을 남깁니다.</p><div class="dash-card"><h2>문의 목록</h2>${leadRows(leads.filter((lead) => lead.intake_type === 'inquiry'), true)}</div></section>
@@ -94,6 +101,13 @@ function wireActionButtons() {
 async function loadLeads(session) {
   const query = currentRole === 'admin' ? '' : `&auth_user_id=eq.${encodeURIComponent(currentUser.id)}`;
   const response = await fetch(`${SUPABASE_URL}/rest/v1/leads?select=*&order=created_at.desc${query}`, { headers: authHeaders(session.access_token) });
+  if (!response.ok) return [];
+  return response.json();
+}
+
+async function loadProfiles(session) {
+  if (currentRole !== 'admin') return [];
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/profiles?select=id,email,full_name,phone,company_name,role,created_at&order=created_at.desc`, { headers: authHeaders(session.access_token) });
   if (!response.ok) return [];
   return response.json();
 }
@@ -114,6 +128,7 @@ async function initializeDashboard() {
   roleBadge.textContent = currentRole === 'admin' ? '관리자 포털' : '고객 포털';
   pageTitle.textContent = currentRole === 'admin' ? '관리자 대시보드' : '고객 대시보드';
   leads = await loadLeads(sessionData.session);
+  profiles = await loadProfiles(sessionData.session);
   renderNav();
   currentRole === 'admin' ? renderAdmin() : renderCustomer();
 }

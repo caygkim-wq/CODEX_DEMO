@@ -50,11 +50,14 @@ grant insert on public.leads to authenticated;
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   role text not null default 'customer' check (role in ('customer', 'admin')),
+  email text,
   full_name text,
   phone text,
   company_name text,
   created_at timestamptz not null default now()
 );
+
+alter table public.profiles add column if not exists email text;
 
 alter table public.profiles enable row level security;
 grant select on public.profiles to authenticated;
@@ -66,15 +69,39 @@ create policy "Users can read own profile"
   to authenticated
   using (id = auth.uid());
 
+create or replace function public.is_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.profiles
+    where profiles.id = auth.uid() and profiles.role = 'admin'
+  );
+$$;
+
+revoke all on function public.is_admin() from public;
+grant execute on function public.is_admin() to authenticated;
+
+drop policy if exists "Admins can read all profiles" on public.profiles;
+create policy "Admins can read all profiles"
+  on public.profiles
+  for select
+  to authenticated
+  using (public.is_admin());
+
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
 security definer set search_path = public
 as $$
 begin
-  insert into public.profiles (id, full_name, phone, company_name)
+  insert into public.profiles (id, email, full_name, phone, company_name)
   values (
     new.id,
+    new.email,
     new.raw_user_meta_data ->> 'full_name',
     new.raw_user_meta_data ->> 'phone',
     new.raw_user_meta_data ->> 'company_name'
@@ -83,6 +110,11 @@ begin
   return new;
 end;
 $$;
+
+update public.profiles p
+set email = u.email
+from auth.users u
+where p.id = u.id and (p.email is null or p.email = '');
 
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
@@ -103,14 +135,9 @@ create policy "Admins can read all leads"
   on public.leads
   for select
   to authenticated
-  using (
-    exists (
-      select 1 from public.profiles
-      where profiles.id = auth.uid() and profiles.role = 'admin'
-    )
-  );
+  using (public.is_admin());
 
 -- 관리자 계정 생성 후 아래 문장을 실행하세요. 관리자 이메일: ca.ygkim@gmail.com
 -- update public.profiles
--- set role = 'admin'
+-- set role = 'admin', email = 'ca.ygkim@gmail.com'
 -- where id = (select id from auth.users where email = 'ca.ygkim@gmail.com');

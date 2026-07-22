@@ -5,10 +5,11 @@
 -- 3. Supabase SQL Editor에서 supabase-schema.sql을 먼저 실행합니다.
 -- 4. 이 파일의 아래 SQL을 실행하면 해당 계정이 관리자 계정으로 전환됩니다.
 
-insert into public.profiles (id, role, full_name, phone, company_name)
+insert into public.profiles (id, role, email, full_name, phone, company_name)
 select
   id,
   'admin',
+  email,
   raw_user_meta_data ->> 'full_name',
   raw_user_meta_data ->> 'phone',
   raw_user_meta_data ->> 'company_name'
